@@ -180,6 +180,16 @@ int insert_sorted(SnapEntry *arr, int n, int slot, const Finger &fg)
     return pos;
 }
 
+void reset_prev_state()
+{
+    for (int s = 0; s < kMaxFingers; ++s) {
+        g_prev.fingers[s].tracking_id = -1;
+        g_prev.fingers[s].x = 0;
+        g_prev.fingers[s].y = 0;
+    }
+    g_prev.n_active = 0;
+}
+
 } // namespace
 
 void touch_send_reset(void)
@@ -192,6 +202,17 @@ void touch_send_reset(void)
 
 void touch_on_frame(const MtState &cur)
 {
+    // If AA is not the foreground video target, we deliberately drop all touch
+    // events. We also clear the cached previous state here. Otherwise the next
+    // time focus returns we compare against a state that still says a finger is
+    // down and the phone behaves as if a finger never lifted.
+    void *aap = Singleton_AapProc_GetInstance();
+    if (!aap || !VideoManager_IsAAVideoInFocus(AapProc_GetVideoManager(aap))) {
+        reset_prev_state();
+        g_prev_init = true;
+        return;
+    }
+
     if (!g_prev_init) {
         // One-shot init for g_prev. The "slot empty" sentinel is
         // tracking_id = -1, but `MtState g_prev;` at file scope is
@@ -205,12 +226,7 @@ void touch_on_frame(const MtState &cur)
         // slot. AA would silently drop the phantom UPs (no prior
         // DOWN to match) but the wire stream is malformed and
         // gesture detectors can react unpredictably.
-        for (int s = 0; s < kMaxFingers; ++s) {
-            g_prev.fingers[s].tracking_id = -1;
-            g_prev.fingers[s].x = 0;
-            g_prev.fingers[s].y = 0;
-        }
-        g_prev.n_active = 0;
+        reset_prev_state();
         g_prev_init = true;
         // Fall through into the normal diff path.
     }
