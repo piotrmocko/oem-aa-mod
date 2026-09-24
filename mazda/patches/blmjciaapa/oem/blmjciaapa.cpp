@@ -71,6 +71,44 @@ constexpr uintptr_t AapConnectionManager_DevName     = 0x54;   // char[]  USB de
 constexpr uintptr_t AapConnectionManager_ConnectMode = 0xdc;   // int     0=idle 2=pending-pair 3=activated
 } // namespace off
 
+// Cheap self-check: our thunking model assumes a very specific OEM build
+// (FW 74.00.324A NA). We do not guess based on a version string alone; we
+// validate the first instructions of a few known entry points before we ever
+// call into the library at fixed offsets. If the bytes do not match, we keep
+// the target unresolved and refuse to jump, which avoids calling into the
+// wrong function when the firmware changes.
+struct Sig {
+	uintptr_t offset;
+	uint32_t  word0;
+	uint32_t  word1;
+};
+
+bool blm_verify_sig(uintptr_t base)
+{
+	if (base == 0) {
+		return false;
+	}
+
+	const Sig want[] = {
+		{ off::GetServiceInterfaces, 0xe92d4810u, 0xe28db008u },
+		{ off::Singleton_AapProc_GetInstance, 0xe92d4830u, 0xe28db00cu },
+		{ off::AapProc_GetRaceAap, 0xe52db004u, 0xe28db000u },
+		{ off::AapProc_GetVideoManager, 0xe52db004u, 0xe28db000u },
+		{ off::VideoManager_IsAAVideoInFocus, 0xe92d4810u, 0xe28db008u },
+	};
+
+	for (const Sig &s : want) {
+		const uint32_t *code = reinterpret_cast<const uint32_t *>(base + s.offset);
+		if (code[0] != s.word0 || code[1] != s.word1) {
+			LOGC("oem: firmware mismatch at +0x%lx: got %08x,%08x expected %08x,%08x",
+				 (unsigned long)s.offset, code[0], code[1], s.word0, s.word1);
+			return false;
+		}
+	}
+
+	return true;
+}
+
 // Load bias of the already-mapped blmjciaapa.so: address of the
 // exported anchor minus its file offset. 0 until resolved (or if
 // blmjciaapa.so isn't mapped). Retries until it succeeds — the BLM's
@@ -88,6 +126,11 @@ uintptr_t blm_base()
 		if (sym) {
 			base = reinterpret_cast<uintptr_t>(sym)
 			       - off::GetServiceInterfaces;
+			if (!blm_verify_sig(base)) {
+				base = 0;
+				LOGC("oem: blmjciaapa.so rejected: unsupported OEM build "
+				     "(fixed-offset call table does not match 74.00.324A NA)");
+			}
 		} else {
 			// Log once — repeated misses (e.g. we're not the
 			// {L_jciAAPA} PID, so blmjciaapa.so is never mapped)
