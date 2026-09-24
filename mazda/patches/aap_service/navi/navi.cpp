@@ -142,8 +142,11 @@ bool install_nav_hook()
     *slot = reinterpret_cast<uintptr_t>(&hook_routeMessage);
     LOGD("hook: nav routeMessage installed (slot7 @0x%08lx)",
          (unsigned long)kVtableSlotAddr);
-    if (!set_prot(kVtableSlotAddr, sizeof(uintptr_t), PROT_READ))
-        LOGW("hook: mprotect RO restore failed (hook IS installed; continuing)");
+    // The slot is executable code-ptr storage in a page we are patching, so
+    // restore it to read+execute instead of plain read. Dropping X here can
+    // break code fetch on a shared vtable page.
+    if (!set_prot(kVtableSlotAddr, sizeof(uintptr_t), PROT_READ | PROT_EXEC))
+        LOGW("hook: mprotect RX restore failed (hook IS installed; continuing)");
     return true;
 }
 
