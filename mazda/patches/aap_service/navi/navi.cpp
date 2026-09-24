@@ -105,17 +105,17 @@ int hook_routeMessage(void *self, uint32_t chan, uint32_t msgId,
                                                           iobuf_ref);
 }
 
-void bump_version()
+bool bump_version()
 {
     volatile uint32_t *p = reinterpret_cast<volatile uint32_t *>(kVersionInsnAddr);
     if (*p != kVersionInsnOld) {
         LOGE("version: ABORT - 0x%08x at 0x%08lx, expected 0x%08x",
              *p, (unsigned long)kVersionInsnAddr, kVersionInsnOld);
-        return;
+        return false;
     }
     if (!set_prot(kVersionInsnAddr, 4, PROT_READ | PROT_WRITE)) {
         LOGE("version: ABORT - mprotect RW failed");
-        return;
+        return false;
     }
     *p = kVersionInsnNew;
     set_prot(kVersionInsnAddr, 4, PROT_READ | PROT_EXEC);
@@ -123,6 +123,7 @@ void bump_version()
                             reinterpret_cast<char *>(kVersionInsnAddr + 4));
     LOGD("version: advertising GAL 1.6 (mov r2,#5 -> #6 @0x%08lx)",
          (unsigned long)kVersionInsnAddr);
+    return true;
 }
 
 bool install_nav_hook()
@@ -153,10 +154,19 @@ namespace aap_service_navi {
 void init()
 {
     LOGD("GAL 1.6 nav path active");
-    if (install_nav_hook())
-        bump_version();
-    else
-        LOGE("GAL 1.6 path DISABLED - hook failed; staying stock GAL 1.5");
+
+    // Important: bump the negotiated version first. If the version change fails,
+    // we must not install the hook because the OEM will keep swallowing
+    // 0x8001..0x8007 messages (including the 1.5 IDs) and the HUD goes dark.
+    if (!bump_version()) {
+        LOGE("GAL 1.6 path DISABLED - version bump failed; staying stock GAL 1.5");
+        return;
+    }
+
+    if (!install_nav_hook()) {
+        LOGE("GAL 1.6 path DISABLED - hook failed after version bump");
+        return;
+    }
 }
 
 } // namespace aap_service_navi
