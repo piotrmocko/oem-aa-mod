@@ -80,9 +80,8 @@ ProjStatusFn g_orig_proj_cb = nullptr;
 pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
 bool g_activator_running = false;
 
-// Match only the complete USB device name. A substring match would let a
-// generic name such as "Accessory" or "carplay" enable the pairing bypass
-// for an unrelated device whose name merely contains that word.
+// Match a known device family anywhere in the USB device name. Dongles often
+// append a model or firmware suffix to these advertised names.
 bool is_known_device(const char* currentDeviceName) 
 {
     if (currentDeviceName == nullptr) return false;
@@ -90,7 +89,7 @@ bool is_known_device(const char* currentDeviceName)
     const size_t elementCount = sizeof(kDongleDevNames) / sizeof(kDongleDevNames[0]);
 
     for (size_t i = 0; i < elementCount; ++i) {
-        if (strcasecmp(currentDeviceName, kDongleDevNames[i]) == 0) {
+        if (strcasestr(currentDeviceName, kDongleDevNames[i]) != nullptr) {
             return true;
         }
     }
