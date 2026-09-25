@@ -203,9 +203,8 @@ void touch_send_reset(void)
 void touch_on_frame(const MtState &cur)
 {
     // If AA is not the foreground video target, we deliberately drop all touch
-    // events. We also clear the cached previous state here. Otherwise the next
-    // time focus returns we compare against a state that still says a finger is
-    // down and the phone behaves as if a finger never lifted.
+    // events and discard the local diff baseline. When focus returns, the next
+    // frame starts a fresh touch sequence instead of replaying stale local state.
     void *aap = Singleton_AapProc_GetInstance();
     if (!aap || !VideoManager_IsAAVideoInFocus(AapProc_GetVideoManager(aap))) {
         reset_prev_state();
