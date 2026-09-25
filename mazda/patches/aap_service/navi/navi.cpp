@@ -150,6 +150,17 @@ bool install_nav_hook()
     return true;
 }
 
+bool restore_nav_hook()
+{
+    volatile uintptr_t *slot = reinterpret_cast<volatile uintptr_t *>(kVtableSlotAddr);
+    if (*slot != reinterpret_cast<uintptr_t>(&hook_routeMessage))
+        return false;
+    if (!set_prot(kVtableSlotAddr, sizeof(uintptr_t), PROT_READ | PROT_WRITE))
+        return false;
+    *slot = kRouteMessageAddr;
+    return set_prot(kVtableSlotAddr, sizeof(uintptr_t), PROT_READ | PROT_EXEC);
+}
+
 } // namespace
 
 namespace aap_service_navi {
@@ -158,16 +169,19 @@ void init()
 {
     LOGD("GAL 1.6 nav path active");
 
-    // Important: bump the negotiated version first. If the version change fails,
-    // we must not install the hook because the OEM will keep swallowing
-    // 0x8001..0x8007 messages (including the 1.5 IDs) and the HUD goes dark.
-    if (!bump_version()) {
-        LOGE("GAL 1.6 path DISABLED - version bump failed; staying stock GAL 1.5");
+    // Install the hook first: it swallows the 1.5 navigation messages and relays
+    // them to the GAL 1.6 socket. Only advertise 1.6 after that path is ready.
+    if (!install_nav_hook()) {
+        LOGE("GAL 1.6 path DISABLED - hook failed; staying stock GAL 1.5");
         return;
     }
 
-    if (!install_nav_hook()) {
-        LOGE("GAL 1.6 path DISABLED - hook failed after version bump");
+    if (!bump_version()) {
+        if (!restore_nav_hook())
+            LOGE("GAL 1.6 path DISABLED - failed to roll back navigation hook");
+        else
+            LOGD("GAL 1.6 navigation hook rolled back");
+        LOGE("GAL 1.6 path DISABLED - version bump failed; staying stock GAL 1.5");
         return;
     }
 }
