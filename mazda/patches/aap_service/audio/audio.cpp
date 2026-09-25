@@ -99,9 +99,7 @@ unsigned query_rate(snd_pcm_t *pcm)
     size_t sz = g_real_hw_params_sizeof();
     if (sz == 0) return 0;
     snd_pcm_hw_params_t *hw = static_cast<snd_pcm_hw_params_t *>(alloca(sz));
-    if (hw != nullptr) {
-        std::fill_n(reinterpret_cast<unsigned char *>(hw), sz, 0u);
-    }
+    std::fill_n(reinterpret_cast<unsigned char *>(hw), sz, 0u);
     if (g_real_hw_params_current(pcm, hw) < 0) return 0;
     unsigned rate = 0;
     int dir = 0;
