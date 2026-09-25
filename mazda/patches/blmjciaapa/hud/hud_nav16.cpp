@@ -71,12 +71,7 @@ inline void copy_str(char *dst, size_t cap, const uint8_t *s, size_t n)
         if (cap > 0) dst[0] = '\0';
         return;
     }
-    char temp[256];
-    std::memset(temp, 0, sizeof(temp));
-    const size_t max_len = (n < sizeof(temp) - 1) ? n : (sizeof(temp) - 1);
-    std::memcpy(temp, s, max_len);
-    temp[max_len] = '\0';
-    libpatch::copy_utf8_truncated(dst, cap, temp, max_len);
+    libpatch::copy_utf8_truncated(dst, cap, reinterpret_cast<const char *>(s), n);
 }
 
 // ---- NavigationDistance { meters=1, display_value=2, display_units=3 } -------
