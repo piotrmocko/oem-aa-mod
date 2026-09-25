@@ -9,7 +9,6 @@
 #include "common/preload.h"
 
 #include <alsa/asoundlib.h>
-#include <algorithm>
 #include <alloca.h>
 #include <cerrno>
 #include <cstdint>
@@ -97,9 +96,9 @@ unsigned query_rate(snd_pcm_t *pcm)
     if (!g_real_hw_params_sizeof || !g_real_hw_params_current || !g_real_hw_params_get_rate)
         return 0;
     size_t sz = g_real_hw_params_sizeof();
-    if (sz == 0) return 0;
+    if (!sz) return 0;
     snd_pcm_hw_params_t *hw = static_cast<snd_pcm_hw_params_t *>(alloca(sz));
-    std::fill_n(reinterpret_cast<unsigned char *>(hw), sz, 0u);
+    std::memset(hw, 0, sz);
     if (g_real_hw_params_current(pcm, hw) < 0) return 0;
     unsigned rate = 0;
     int dir = 0;
