@@ -13,11 +13,10 @@
 #include "common/thread_util.h"
 
 #include <pthread.h>
-#include <algorithm>
-#include <cctype>
 #include <cstdlib>
 #include <cstdio>
 #include <string.h>
+#include <strings.h>
 #include <unistd.h>
 
 #include <string>
@@ -81,8 +80,9 @@ ProjStatusFn g_orig_proj_cb = nullptr;
 pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
 bool g_activator_running = false;
 
-// Match known dongle names as case-insensitive substrings of the current
-// device name.
+// Match only the complete USB device name. A substring match would let a
+// generic name such as "Accessory" or "carplay" enable the pairing bypass
+// for an unrelated device whose name merely contains that word.
 bool is_known_device(const char* currentDeviceName) 
 {
     if (currentDeviceName == nullptr) return false;
@@ -90,15 +90,7 @@ bool is_known_device(const char* currentDeviceName)
     const size_t elementCount = sizeof(kDongleDevNames) / sizeof(kDongleDevNames[0]);
 
     for (size_t i = 0; i < elementCount; ++i) {
-        const char *knownName = kDongleDevNames[i];
-        const char *match = std::search(
-            currentDeviceName, currentDeviceName + strlen(currentDeviceName),
-            knownName, knownName + strlen(knownName),
-            [](char left, char right) {
-                return std::tolower(static_cast<unsigned char>(left)) ==
-                       std::tolower(static_cast<unsigned char>(right));
-            });
-        if (match != currentDeviceName + strlen(currentDeviceName)) {
+        if (strcasecmp(currentDeviceName, kDongleDevNames[i]) == 0) {
             return true;
         }
     }
