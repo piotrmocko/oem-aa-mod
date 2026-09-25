@@ -32,28 +32,18 @@
 #include "common/preload.h"     // PRELOAD_EXPORT, resolve_real_symbol()
 #include "common/audio/drain_event.h" // drain_event::{open_sem,post} — tell blmjciaapa the tail drained
 
-#include <dlfcn.h>
 #include <semaphore.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <time.h>
 
-// Exact call-site offset we want to match within the OEM caller. We used to key on the low
-// 12 bits of the return address across the whole process, which could hit unrelated code that
-// happened to end in the same page offset. Use dladdr() to resolve the caller's function and
-// then compare the full offset from that function start.
-static const uintptr_t kEosDrainRetFuncOff = 0x198;
+// Exact call-site offset we want to match. The OEM executable is page-aligned and this
+// measured page offset is stable across loads.
+static const uintptr_t kEosDrainRetPageOff = 0x198;
 
 static bool is_eos_drain_wait(uintptr_t ret_addr)
 {
-    Dl_info info;
-    if (dladdr(reinterpret_cast<void *>(ret_addr), &info) == 0 || info.dli_saddr == nullptr) {
-        return false;
-    }
-
-    const uintptr_t func_start = reinterpret_cast<uintptr_t>(info.dli_saddr);
-    const uintptr_t call_offset = ret_addr - func_start;
-    return call_offset == kEosDrainRetFuncOff;
+    return (ret_addr & 0xfff) == kEosDrainRetPageOff;
 }
 // Fail-open ceiling. The wait is event-driven — the semaphore is posted the instant the tail
 // finishes draining (~1.2 s), so the wait returns then; this is only a backstop for a
@@ -87,30 +77,14 @@ int sem_timedwait(sem_t *sem, const struct timespec *abstime)
         return real(sem, abstime);
 
     const uintptr_t ret = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
-    uintptr_t ret_off = 0;
-    Dl_info ret_info;
-    if (dladdr(reinterpret_cast<void *>(ret), &ret_info) != 0 && ret_info.dli_saddr != nullptr) {
-        ret_off = ret - reinterpret_cast<uintptr_t>(ret_info.dli_saddr);
-    }
-
     struct timespec rt;
     clock_gettime(CLOCK_REALTIME, &rt);
     // Remaining time until the caller's deadline, in realtime terms (what sem_timedwait uses).
     const long rem_ms = (long)(abstime->tv_sec  - rt.tv_sec) * 1000L
                       + (long)(abstime->tv_nsec - rt.tv_nsec) / 1000000L;
 
-    // Verbose per-call trace: confirm the interpose is bound and show each wait's remaining time
-    // and call-site offset, so the EOS-drain site stays identifiable in a trace. Compiled out entirely
-    // unless the shim is built at verbose level (LOG_LEVEL_VERBOSE) — the level gate is the switch,
-    // no manual call counter.
-    LOGV("sem_timedwait HIT: rem=%ldms retoff=0x%03lx abstime={%ld,%09ld} caller=%p",
-         rem_ms, (unsigned long)ret_off,
-         (long)abstime->tv_sec, (long)abstime->tv_nsec, (void *)ret);
-
-    // The EOS-drain wait. Check the exact return offset within the caller function, not just the
-    // low bits of the address, so unrelated installer/cleanup paths cannot be mistaken for the
-    // drain wait. Once matched, extend the deadline so the tail can drain instead of being cut off,
-    // then post the shared drain-done token as soon as the wait succeeds.
+        // The EOS-drain wait. Once matched, extend the deadline so the tail can drain instead of being
+        // cut off, then post the shared drain-done token as soon as the wait succeeds.
     if (is_eos_drain_wait(ret)) {
         // Clear any stale token here, at drain-START — not at the consumer's arm. The stop
         // reaches this drain before it reaches blmjciaapa's arm, and a short prompt can finish
