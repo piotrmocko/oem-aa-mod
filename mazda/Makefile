@@ -57,8 +57,7 @@ PKG_LIBS   := $(if $(PKGS),$(shell $(PKG_CONFIG) --libs   $(PKGS)))
 # -Wl,-z,relro,-z,now and -Wl,-z,noexecstack tighten the ELF loader
 # protections for the output .so without changing the runtime logic.
 # $(PKG_CFLAGS) / $(PKG_LIBS) are intentionally empty for now: the patch
-# set resolves its OEM entry points at runtime via dlopen()/dlsym() and
-# does not link against a static D-Bus or proprietary SDK bundle.
+# set does not link against a static D-Bus or proprietary SDK bundle.
 COMMON_CXXFLAGS := -std=c++11 \
                    --sysroot=$(SYSROOT) \
                    -march=armv7-a -mtune=cortex-a9 -mfpu=neon \
@@ -73,11 +72,13 @@ COMMON_CXXFLAGS := -std=c++11 \
                    $(EXTRA_CXXFLAGS)
 # EXTRA_CXXFLAGS: appended to every compile. E.g. verbose logs in a release lib:
 #   make ... EXTRA_CXXFLAGS='-DLOG_LEVEL=LOG_LEVEL_VERBOSE'
-# -D_GLIBCXX_USE_CXX11_ABI=0 matches the device's runtime libstdc++ ABI.
-# We intentionally do not statically link a newer libstdc++ into the .so,
-# because that would create two C++ runtimes in the same process and can
-# corrupt state across the OEM boundary. The project keeps one ABI and lets
-# the CMU's shipped libstdc++ provide the runtime.
+# -D_GLIBCXX_USE_CXX11_ABI=0 selects the pre-C++11 (COW) std::string and
+# std::list ABI used by the CMU's GCC 4.6-era libstdc++. Without this flag,
+# a std::string crossing the OEM boundary can be interpreted with a different
+# layout and corrupt the shared heap.
+# We intentionally do not statically link a newer libstdc++ into the .so:
+# that would create two C++ runtimes in one process. The shim uses the CMU's
+# shipped runtime, matching the ABI used by the OEM libraries.
 COMMON_LDFLAGS  := --sysroot=$(SYSROOT) -shared \
                    -Wl,--no-undefined \
                    -Wl,-z,relro,-z,now \
