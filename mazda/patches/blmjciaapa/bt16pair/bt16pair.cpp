@@ -80,8 +80,8 @@ ProjStatusFn g_orig_proj_cb = nullptr;
 pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
 bool g_activator_running = false;
 
-// Match a known device family anywhere in the USB device name. Dongles often
-// append a model or firmware suffix to these advertised names.
+// Match known dongle names as case-insensitive substrings of the current
+// device name.
 bool is_known_device(const char* currentDeviceName) 
 {
     if (currentDeviceName == nullptr) return false;
