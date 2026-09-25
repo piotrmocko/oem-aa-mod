@@ -37,14 +37,11 @@
 #include <stdio.h>
 #include <time.h>
 
-// Exact call-site offset we want to match. The OEM executable is page-aligned and this
-// measured page offset is stable across loads.
+// Identifies the EOS-drain wait by the low 12 bits of its return address (the library is
+// page-aligned, so this offset is stable across loads). This is the only timed wait we extend;
+// the pipeline-stop waits in the same function return to different offsets and are left alone.
 static const uintptr_t kEosDrainRetPageOff = 0x198;
-
-static bool is_eos_drain_wait(uintptr_t ret_addr)
-{
-    return (ret_addr & 0xfff) == kEosDrainRetPageOff;
-}
+static const uintptr_t kPageOffMask        = 0xFFF;
 // Fail-open ceiling. The wait is event-driven — the semaphore is posted the instant the tail
 // finishes draining (~1.2 s), so the wait returns then; this is only a backstop for a
 // pathological never-fires case. We only ever extend a too-short wait, never shorten one, so a
@@ -76,20 +73,28 @@ int sem_timedwait(sem_t *sem, const struct timespec *abstime)
     if (!abstime || !g_enabled)
         return real(sem, abstime);
 
-    const uintptr_t ret = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
+    const uintptr_t ret     = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
+    const uintptr_t ret_off = ret & kPageOffMask;
+
     struct timespec rt;
     clock_gettime(CLOCK_REALTIME, &rt);
     // Remaining time until the caller's deadline, in realtime terms (what sem_timedwait uses).
     const long rem_ms = (long)(abstime->tv_sec  - rt.tv_sec) * 1000L
                       + (long)(abstime->tv_nsec - rt.tv_nsec) / 1000000L;
 
+    // Verbose per-call trace: confirm the interpose is bound and show each wait's remaining time
+    // and call-site offset, so the EOS-drain site stays identifiable in a trace. Compiled out entirely
+    // unless the shim is built at verbose level (LOG_LEVEL_VERBOSE) — the level gate is the switch,
+    // no manual call counter.
     LOGV("sem_timedwait HIT: rem=%ldms retoff=0x%03lx abstime={%ld,%09ld} caller=%p",
-         rem_ms, (unsigned long)(ret & 0xfff),
+         rem_ms, (unsigned long)ret_off,
          (long)abstime->tv_sec, (long)abstime->tv_nsec, (void *)ret);
 
-        // The EOS-drain wait. Once matched, extend the deadline so the tail can drain instead of being
-        // cut off, then post the shared drain-done token as soon as the wait succeeds.
-    if (is_eos_drain_wait(ret)) {
+    // The EOS-drain wait. Extend its deadline so the pipeline finishes draining and the tail
+    // plays instead of being flushed (only ever extend, never shorten); then, the instant it
+    // returns success, post a cross-process "tail drained" token so blmjciaapa's audio_stopdelay
+    // releases the amp mix exactly then rather than guessing a fixed hold. See common/audio/drain_event.h.
+    if (ret_off == kEosDrainRetPageOff) {
         // Clear any stale token here, at drain-START — not at the consumer's arm. The stop
         // reaches this drain before it reaches blmjciaapa's arm, and a short prompt can finish
         // draining (and post its token) inside that gap; resetting at drain-start clears
