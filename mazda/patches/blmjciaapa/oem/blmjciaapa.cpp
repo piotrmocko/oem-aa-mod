@@ -14,6 +14,7 @@
 
 #include "blmjciaapa.h"
 
+#include <atomic>
 #include <dlfcn.h>
 
 namespace {
@@ -117,7 +118,11 @@ bool blm_verify_sig(uintptr_t base)
 // once non-zero the bias never changes.
 uintptr_t blm_base()
 {
+	static std::atomic<bool> rejected(false);
 	static uintptr_t base = 0;
+	if (rejected.load(std::memory_order_acquire))
+		return 0;
+
 	if (base == 0) {
 		void *handle = dlopen("/jci/aapa/blmjciaapa.so",
 		                      RTLD_NOW | RTLD_NOLOAD);
@@ -128,6 +133,7 @@ uintptr_t blm_base()
 			       - off::GetServiceInterfaces;
 			if (!blm_verify_sig(base)) {
 				base = 0;
+				rejected.store(true, std::memory_order_release);
 				LOGC("oem: blmjciaapa.so rejected: unsupported OEM build "
 				     "(fixed-offset call table does not match 74.00.324A NA)");
 			}
