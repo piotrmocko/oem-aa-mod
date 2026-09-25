@@ -11,6 +11,7 @@
 #include "hud_nav16.h"
 #include "hud_nav.h"   // MazdaIcon glyph IDs (HUD_*) — one enum, shared with the 1.5 path
 #include "common/aa_nav16_msg.h"   // AA_NAV16_MSG_* — the sender/receiver msgId contract
+#include "common/string_safe.h"
 
 #include <cstring>
 #include <cstdio>
@@ -64,12 +65,18 @@ bool skip(Pb &c, uint32_t wire)
     }
 }
 
-void copy_str(char *dst, size_t cap, const uint8_t *s, size_t n)
+inline void copy_str(char *dst, size_t cap, const uint8_t *s, size_t n)
 {
-    if (cap == 0) return;
-    if (n >= cap) n = cap - 1;
-    std::memcpy(dst, s, n);
-    dst[n] = '\0';
+    if (!s) {
+        if (cap > 0) dst[0] = '\0';
+        return;
+    }
+    char temp[256];
+    std::memset(temp, 0, sizeof(temp));
+    const size_t max_len = (n < sizeof(temp) - 1) ? n : (sizeof(temp) - 1);
+    std::memcpy(temp, s, max_len);
+    temp[max_len] = '\0';
+    libpatch::copy_utf8_truncated(dst, cap, temp, max_len);
 }
 
 // ---- NavigationDistance { meters=1, display_value=2, display_units=3 } -------
@@ -274,7 +281,8 @@ uint8_t hud_nav16_glyph(const AaGuidance *g)
         case 34: case 35:  // RA_ENTER_EXIT_CCW (counterclockwise = right-hand traffic)
             return roundabout_glyph(g->roundabout_exit_angle, /*clockwise=*/false);
         default:
-            return (g->maneuver_type < 43) ? kManeuverGlyph[g->maneuver_type] : HUD_EMPTY;
+            return (g->maneuver_type < 43) ? kManeuverGlyph[g->maneuver_type]
+                                           : static_cast<uint8_t>(HUD_EMPTY);
     }
 }
 
