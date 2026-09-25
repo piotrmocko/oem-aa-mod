@@ -83,6 +83,10 @@ int sem_timedwait(sem_t *sem, const struct timespec *abstime)
     const long rem_ms = (long)(abstime->tv_sec  - rt.tv_sec) * 1000L
                       + (long)(abstime->tv_nsec - rt.tv_nsec) / 1000000L;
 
+    LOGV("sem_timedwait HIT: rem=%ldms retoff=0x%03lx abstime={%ld,%09ld} caller=%p",
+         rem_ms, (unsigned long)(ret & 0xfff),
+         (long)abstime->tv_sec, (long)abstime->tv_nsec, (void *)ret);
+
         // The EOS-drain wait. Once matched, extend the deadline so the tail can drain instead of being
         // cut off, then post the shared drain-done token as soon as the wait succeeds.
     if (is_eos_drain_wait(ret)) {
