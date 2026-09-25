@@ -277,7 +277,7 @@ uint8_t hud_nav16_glyph(const AaGuidance *g)
             return roundabout_glyph(g->roundabout_exit_angle, /*clockwise=*/false);
         default:
             return (g->maneuver_type < 43) ? kManeuverGlyph[g->maneuver_type]
-                                           : static_cast<uint8_t>(HUD_EMPTY);
+                                           : HUD_EMPTY;
     }
 }
 
