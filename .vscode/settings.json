@@ -1,0 +1,57 @@
+{
+    // C++ Extension Settings
+    "C_Cpp.clang_format_style": "file",
+    "C_Cpp.clang_format_fallbackStyle": "LLVM",
+    "C_Cpp.formatting": "clangFormat",
+    "C_Cpp.intelliSenseEngine": "default",
+    "C_Cpp.enhancedColorization": "enabled",
+
+    // Format on Save
+    "[cpp]": {
+        "editor.formatOnSave": true,
+        "editor.formatOnPaste": true,
+        "editor.defaultFormatter": "ms-vscode.cpptools"
+    },
+    "[c]": {
+        "editor.formatOnSave": true,
+        "editor.formatOnPaste": true,
+        "editor.defaultFormatter": "ms-vscode.cpptools"
+    },
+    "[h]": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "ms-vscode.cpptools"
+    },
+    "[hpp]": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "ms-vscode.cpptools"
+    },
+
+    // Editor formatting defaults
+    "editor.trimAutoWhitespace": true,
+    "editor.rulers": [
+        100
+    ],
+
+    // File associations
+    "files.associations": {
+        "*.cpp": "cpp",
+        "*.h": "cpp",
+        "*.hpp": "cpp",
+        "*.c": "c"
+    },
+
+    // Exclude patterns
+    "files.exclude": {
+        "**/.*": true,
+        "**/__pycache__": true,
+        "**/build": true,
+        "**/obj": true
+    },
+
+    // Search exclude
+    "search.exclude": {
+        "**/build": true,
+        "**/obj": true,
+        "**/.git": true
+    }
+}
