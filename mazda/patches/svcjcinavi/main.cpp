@@ -31,6 +31,7 @@
 #include "common/config.h"
 #include "common/preload_guard.h"
 
+#include <exception>
 #include <unistd.h>
 
 namespace {
@@ -57,14 +58,20 @@ void on_load()
     // Settle libpatch.conf now, so the module gates below are decided
     // before svcjcinavi's initializeSettings makes the first interposed
     // call. load() is idempotent, so merge.cpp's own call is a no-op.
-    // Wrapped because an exception escaping a library constructor would
-    // reach the (non-exception-aware) loader and take the launcher down;
-    // on any error we keep the compiled-in defaults.
+    // load() is pure C-style file I/O today and is not expected to throw;
+    // this try/catch is a hard safety boundary, not handling of an
+    // anticipated throw. It matters because an exception escaping a
+    // library constructor would reach the (non-exception-aware) loader
+    // and take the launcher down; on any error we keep the compiled-in
+    // defaults.
     try {
         libpatch_config::load(reinterpret_cast<const void *>(&on_load));
+    } catch (const std::exception &e) {
+        LOGE("config: load threw (%s) — keeping defaults (must never "
+             "escape the library constructor)", e.what());
     } catch (...) {
-        LOGE("config: load threw — keeping defaults (must never escape "
-             "the library constructor)");
+        LOGE("config: load threw (non-std exception) — keeping defaults "
+             "(must never escape the library constructor)");
     }
 
     if (libpatch_config::compass_always_on()) {
