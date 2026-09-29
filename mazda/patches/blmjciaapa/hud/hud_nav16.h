@@ -13,6 +13,7 @@
 #define LIBPATCH_BLMJCIAAPA_HUD_HUD_NAV16_H
 
 #include <stdint.h>
+#include <stddef.h>   // size_t
 
 enum { HUD_NAV16_MAX_LANES = 8 };
 
@@ -27,8 +28,16 @@ struct AaLane {
 struct AaGuidance {
     bool     have_maneuver;
     uint32_t maneuver_type;            // NavigationManeuver.NavigationType, 0..42
-    int32_t  roundabout_exit_number;   // field 2 — meaningful for ROUNDABOUT_*
-    int32_t  roundabout_exit_angle;    // field 3 — degrees; selects the roundabout glyph
+    int32_t  roundabout_exit_number;   // field 2 — 1-based, in circulation order;
+                                       // 0 when absent (see have_exit_number)
+    bool     have_exit_number;         // field 2 was on the wire
+    int32_t  roundabout_exit_angle;    // field 3 — degrees from the entry, increasing in
+                                       // the driving direction; 0 when absent
+    bool     have_exit_angle;          // field 3 was on the wire. Needed because an
+                                       // absent angle and a real 0 are otherwise
+                                       // indistinguishable, and they mean different
+                                       // things: the protocol's angle range is
+                                       // (0, 360], so 0 only ever means "not sent"
     char     road[64];                 // NavigationRoad.name (UTF-8)
     int      n_steps;                  // total steps present (diagnostic)
     int      n_lanes;                  // lanes on step[0] (0..8)
@@ -55,7 +64,24 @@ uint32_t hud_nav16_on_frame(const uint8_t *raw, int size, AaGuidance *g, AaPosit
 // The maneuver-glyph map: decoded guidance -> Mazda HUD glyph (MazdaIcon, and
 // 37..60 for roundabouts by exit angle). The single source of truth for the
 // AA -> HUD maneuver pairing.
-uint8_t hud_nav16_glyph(const AaGuidance *g);
+//
+// guess_exit_icon: when a roundabout step carries an exit number but no exit
+// angle, estimate the circulation angle from the exit number so a directional
+// glyph is chosen (see exit_number_angle). When false, an absent angle falls
+// back to the index-0 roundabout glyph (the "back out the entry" glyph, angle 0)
+// — the behaviour before that estimate existed. A real exit angle is always
+// honoured either way. The parameter defaults to true only as a convenience for
+// callers and the self-test; the shipped runtime default is false (config key
+// roundabout_guess_exit_icon), and production callers pass that value explicitly.
+uint8_t hud_nav16_glyph(const AaGuidance *g, bool guess_exit_icon = true);
+
+// Build the HUD street name for a step into dst[cap] (NUL-terminated, truncated
+// to fit — mirroring the HUD's own field limit). Normally just the road name;
+// when prepend_exit_number is set and the step is a roundabout that carries an
+// exit number but no exit angle, the name is "(N) <road>" so the driver still
+// sees which exit to take even without a per-exit glyph.
+void hud_nav16_road_with_exit(const AaGuidance *g, bool prepend_exit_number,
+                              char *dst, size_t cap);
 
 // AA NavigationDistance.DistanceUnits (0..7) -> Mazda HUD unit (1=m,2=mi,3=km,
 // 4=yd,5=ft; 0=none). The 1.6 unit map (distinct from the 1.5 NAVDistanceMessage
