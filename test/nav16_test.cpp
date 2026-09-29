@@ -311,6 +311,92 @@ int main()
         CHECK_EQ_U(hud_nav16_glyph(&g), 43u, "angle 180 beats exit-1 estimate");
     }
 
+    // --- NEW: guess_exit_icon=false -> no estimate, index-0 fallback glyph -----
+    // With guessing off, an absent angle must NOT be estimated from the exit
+    // number: the angle is 0, which selects the index-0 ("back out the entry")
+    // roundabout glyph 37 — the pre-estimate behaviour, NOT straight-through
+    // (straight across is 180deg -> 43). A real angle is still honoured.
+    {
+        printf("[12] guess_exit_icon=false -> exit number is not used for the glyph\n");
+        // CCW (type 34) exit 2, no angle: guessing on -> 43, guessing off -> 37
+        auto s = hx("80 06 0a 06 0a 04 08 22 10 02");
+        AaGuidance g;
+        hud_nav16_on_frame(s.data(), (int)s.size(), &g, nullptr);
+        CHECK_EQ_U(hud_nav16_glyph(&g, /*guess_exit_icon=*/true), 43u,
+                   "guess on: exit 2 -> 180deg -> 43");
+        CHECK_EQ_U(hud_nav16_glyph(&g, /*guess_exit_icon=*/false), 37u,
+                   "guess off: no angle -> index-0 fallback -> 37");
+        // A real angle is used regardless of the flag.
+        auto a = hx("80 06 0a 08 0a 06 08 22 10 01 18 5a");   // exit 1, angle 90
+        hud_nav16_on_frame(a.data(), (int)a.size(), &g, nullptr);
+        CHECK_EQ_U(hud_nav16_glyph(&g, /*guess_exit_icon=*/false), 40u,
+                   "guess off: real angle 90 -> 40");
+    }
+
+    // --- NEW: prepend exit number to the street name -------------------------
+    // Only for a roundabout that gave a valid (1-based, in-range) exit number but
+    // no exit angle, and only when the option is on. The result is truncated to
+    // the destination buffer.
+    {
+        printf("[13] roundabout_prepend_exit_number -> \"(N) road\"\n");
+        char road[64];
+        // CCW (type 34) exit 2, no angle, road "422"
+        auto s = hx("80 06 0a 14 0a 04 08 22 10 02"
+                    " 12 05 0a 03 34 32 32 22 05 0a 03 34 32 32");
+        AaGuidance g;
+        hud_nav16_on_frame(s.data(), (int)s.size(), &g, nullptr);
+
+        hud_nav16_road_with_exit(&g, /*prepend=*/true, road, sizeof(road));
+        CHECK_EQ_S(road, "(2) 422", "prepend on -> \"(2) 422\"");
+
+        hud_nav16_road_with_exit(&g, /*prepend=*/false, road, sizeof(road));
+        CHECK_EQ_S(road, "422", "prepend off -> road unchanged");
+
+        // A real angle present -> the glyph carries the exit, so no prefix.
+        auto a = hx("80 06 0a 16 0a 06 08 22 10 02 18 5a"
+                    " 12 05 0a 03 34 32 32 22 05 0a 03 34 32 32");
+        hud_nav16_on_frame(a.data(), (int)a.size(), &g, nullptr);
+        hud_nav16_road_with_exit(&g, /*prepend=*/true, road, sizeof(road));
+        CHECK_EQ_S(road, "422", "angle present -> no prefix even with prepend on");
+
+        // A plain turn carrying a stale exit number -> never prefixed.
+        auto t = hx("80 06 0a 0c 0a 04 08 08 10 02 12 04 0a 02 42 42");  // TURN_RIGHT exit 2, road "BB"
+        hud_nav16_on_frame(t.data(), (int)t.size(), &g, nullptr);
+        hud_nav16_road_with_exit(&g, /*prepend=*/true, road, sizeof(road));
+        CHECK_EQ_S(road, "BB", "non-roundabout -> no prefix");
+
+        // Truncation: a long road name is cut to fit the buffer, prefix included.
+        char small[8];
+        auto s2 = hx("80 06 0a 06 0a 04 08 22 10 02");   // type 34 exit 2, no road
+        hud_nav16_on_frame(s2.data(), (int)s2.size(), &g, nullptr);
+        strncpy(g.road, "LONGROADNAME", sizeof(g.road) - 1);
+        hud_nav16_road_with_exit(&g, /*prepend=*/true, small, sizeof(small));
+        CHECK(strlen(small) == sizeof(small) - 1, "truncated to buffer capacity");
+        CHECK_EQ_S(small, "(2) LON", "truncated \"(2) LONGROADNAME\" -> \"(2) LON\"");
+
+        // Untrusted exit number must be range-checked before display: a 1-based
+        // number is required, so 0 (present-but-unusable) gets no prefix, and a
+        // hostile/corrupt value can't fill the field and crowd out the road.
+        {
+            // type 34, exit 0 on the wire (10 00), road "422"
+            auto z = hx("80 06 0a 14 0a 04 08 22 10 00"
+                        " 12 05 0a 03 34 32 32 22 05 0a 03 34 32 32");
+            hud_nav16_on_frame(z.data(), (int)z.size(), &g, nullptr);
+            CHECK(g.have_exit_number, "exit 0 is present on the wire");
+            hud_nav16_road_with_exit(&g, /*prepend=*/true, road, sizeof(road));
+            CHECK_EQ_S(road, "422", "exit 0 -> no prefix (1-based)");
+
+            // A hostile exit-number varint (10 80 80 80 80 08 -> 0x80000000,
+            // which casts to int32 -2147483648).
+            auto neg = hx("80 06 0a 18 0a 08 08 22 10 80 80 80 80 08"
+                          " 12 05 0a 03 34 32 32 22 05 0a 03 34 32 32");
+            hud_nav16_on_frame(neg.data(), (int)neg.size(), &g, nullptr);
+            CHECK(g.roundabout_exit_number < 0, "hostile varint casts negative");
+            hud_nav16_road_with_exit(&g, /*prepend=*/true, road, sizeof(road));
+            CHECK_EQ_S(road, "422", "out-of-range exit -> no prefix, road intact");
+        }
+    }
+
     printf("\n%s\n", g_fail ? "RESULT: FAIL" : "RESULT: PASS");
     return g_fail;
 }

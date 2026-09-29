@@ -265,8 +265,8 @@ uint8_t roundabout_glyph(int32_t exit_angle, bool clockwise)
 // 360*N/E. E is never on the wire, so the angle can only be estimated; these
 // are the values that minimise expected angular error over the plausible arm
 // counts, and the choice is unchanged whether 3-arm or 4-arm roundabouts
-// dominate. It is N*90 up to exit 3 and then saturates, because a 4th exit
-// implies at least 5 arms.
+// dominate. It is N*90 up to exit 3 and then rises more slowly, capped below
+// 360 (270, 300, 300 for N=4..6), because a 4th exit implies at least 5 arms.
 //
 // Accuracy: about one 30-degree glyph step on average. The worst cases are a
 // 3-arm roundabout taken at exit 2 (truly 240) and a 6-arm at exit 3 (truly
@@ -282,18 +282,33 @@ int32_t exit_number_angle(int32_t exit_number)
 }
 
 // The circulation angle to render for a roundabout: the sender's own angle when
-// it sent one, else the exit-number estimate, else straight through.
+// it sent one, else (only if guessing is enabled) the exit-number estimate, else
+// 0 — which selects the index-0 roundabout glyph, the pre-estimate fallback.
+// (Angle 0 is the "back out the entry" glyph, NOT straight-through: straight
+// across is 180 -> index 6. See exit_number_angle for why 0 is a poor guess and
+// the estimate exists at all.)
 //
 // Handedness is NOT decided here — it comes from the maneuver type (32/33 are
 // clockwise, 34/35 counterclockwise), so it is always what the sender stated and
 // never inferred from the vehicle or the market. The estimate above is
 // handedness-independent because the angle increments in the driving direction
 // in both banks, so left-hand-traffic roundabouts need no separate table.
-int32_t roundabout_angle(const AaGuidance *g)
+int32_t roundabout_angle(const AaGuidance *g, bool guess_exit_icon)
 {
     if (g->have_exit_angle) return g->roundabout_exit_angle;
+    if (!guess_exit_icon) return 0;   // no estimate -> index-0 (pre-estimate) glyph
     return exit_number_angle(g->have_exit_number ? g->roundabout_exit_number : 0);
 }
+
+// The roundabout maneuver family: plain enter/exit (30/31) and the enter+exit
+// combined types, both the plain (32/34) and WITH_ANGLE (33/35) variants. Only
+// these carry a meaningful roundabout_exit_number.
+//
+// This is deliberately wider than hud_nav16_glyph's angle switch (32..35): types
+// 30/31 get no directional roundabout glyph (they fall to HUD_STRAIGHT), so for
+// them the "(N)" street caption is the ONLY exit cue and is all the more worth
+// prepending. hud_nav16_road_with_exit is the sole caller.
+bool is_roundabout(uint32_t t) { return t >= 30 && t <= 35; }
 
 } // namespace
 
@@ -302,16 +317,40 @@ static const char *hud_nav16_maneuver_name(uint32_t t)
     return (t < sizeof(kManeuver)/sizeof(kManeuver[0])) ? kManeuver[t] : "?";
 }
 
-uint8_t hud_nav16_glyph(const AaGuidance *g)
+uint8_t hud_nav16_glyph(const AaGuidance *g, bool guess_exit_icon)
 {
     if (!g) return HUD_BLANK;
     switch (g->maneuver_type) {
         case 32: case 33:  // RA_ENTER_EXIT_CW (clockwise = left-hand traffic)
-            return roundabout_glyph(roundabout_angle(g), /*clockwise=*/true);
+            return roundabout_glyph(roundabout_angle(g, guess_exit_icon), /*clockwise=*/true);
         case 34: case 35:  // RA_ENTER_EXIT_CCW (counterclockwise = right-hand traffic)
-            return roundabout_glyph(roundabout_angle(g), /*clockwise=*/false);
+            return roundabout_glyph(roundabout_angle(g, guess_exit_icon), /*clockwise=*/false);
         default:
             return (g->maneuver_type < 43) ? kManeuverGlyph[g->maneuver_type] : HUD_EMPTY;
+    }
+}
+
+void hud_nav16_road_with_exit(const AaGuidance *g, bool prepend_exit_number,
+                              char *dst, size_t cap)
+{
+    if (!dst || cap == 0) return;
+    if (!g) { dst[0] = '\0'; return; }
+    // Prepend "(N) " only for a roundabout that gave an exit number but no angle:
+    // with no per-exit glyph available, the number in the street strip is the
+    // only cue for which exit to take. snprintf truncates to the HUD field width;
+    // %s copies the road bytes verbatim (data, never interpreted as a format).
+    //
+    // roundabout_exit_number is a raw varint cast to int32 from an untrusted
+    // frame, so it must be range-checked before display: exit numbers are 1-based
+    // (0 means "not a usable number", same as the glyph path), and a hostile or
+    // corrupt value like -2147483648 would otherwise fill the whole HUD field and
+    // crowd out the road name. Out of range -> fall through to the plain name.
+    if (prepend_exit_number && is_roundabout(g->maneuver_type)
+        && g->have_exit_number && !g->have_exit_angle
+        && g->roundabout_exit_number >= 1 && g->roundabout_exit_number <= 99) {
+        snprintf(dst, cap, "(%d) %s", g->roundabout_exit_number, g->road);
+    } else {
+        snprintf(dst, cap, "%s", g->road);
     }
 }
 
