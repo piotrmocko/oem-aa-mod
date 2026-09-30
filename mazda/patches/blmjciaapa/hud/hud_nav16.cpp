@@ -347,23 +347,15 @@ void hud_nav16_road_with_exit(const AaGuidance *g, bool prepend_exit_number,
 {
     if (!dst || cap == 0) return;
     if (!g) { dst[0] = '\0'; return; }
-    // Prepend "(N) " only for a roundabout that gave an exit number but no angle:
-    // with no per-exit glyph available, the number in the street strip is the
-    // only cue for which exit to take. snprintf truncates to the HUD field width;
-    // %s copies the road bytes verbatim (data, never interpreted as a format).
-    //
-    // roundabout_exit_number is a raw varint cast to int32 from an untrusted
-    // frame, so it must be range-checked before display: exit numbers are 1-based
-    // (0 means "not a usable number", same as the glyph path), and a hostile or
-    // corrupt value like -2147483648 would otherwise fill the whole HUD field and
-    // crowd out the road name. Out of range -> fall through to the plain name.
     if (prepend_exit_number && is_roundabout(g->maneuver_type)
         && g->have_exit_number && !g->have_exit_angle
         && g->roundabout_exit_number >= 1 && g->roundabout_exit_number <= 99) {
-        snprintf(dst, cap, "(%d) %s", g->roundabout_exit_number, g->road);
-    } else {
-        snprintf(dst, cap, "%s", g->road);
+        const int prefix_len = snprintf(dst, cap, "(%d) ", g->roundabout_exit_number);
+        if ((size_t)prefix_len >= cap) return;
+        libpatch::copy_utf8_truncated(dst + prefix_len, cap - prefix_len, g->road);
+        return;
     }
+    libpatch::copy_utf8_truncated(dst, cap, g->road);
 }
 
 // AA NavigationDistance.DistanceUnits (0..7) -> Mazda HUD unit
