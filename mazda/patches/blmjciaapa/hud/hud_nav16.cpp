@@ -330,9 +330,9 @@ void hud_nav16_road_with_exit(const AaGuidance *g, bool prepend_exit_number,
         dst[2] = ')';
         dst[3] = ' ';
         dst[4] = '\0';
-        snprintf(dst + 4, cap - 4, "%s", g->road);
+        libpatch::copy_utf8_truncated(dst + 4, cap - 4, g->road);
     } else {
-        snprintf(dst, cap, "%s", g->road);
+        libpatch::copy_utf8_truncated(dst, cap, g->road);
     }
 }
 
