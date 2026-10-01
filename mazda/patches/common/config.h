@@ -34,17 +34,11 @@
 //                                     1.6 navigation protocol (maneuver / lanes / distance)
 //                                     instead of the 1.5 turn events; read by aap_service
 //                                     (default false = stock 1.5)
-//   roundabout_guess_exit_icon = true|false
-//                                     for roundabout maneuvers that carry an exit number but no
-//                                     exit angle, estimate the circulation angle from the exit
-//                                     number so a directional roundabout glyph is shown instead of
-//                                     the index-0 "back out the entry" fallback glyph; read by
-//                                     blmjciaapa (1.6 path) (default false)
-//   roundabout_prepend_exit_number = true|false
-//                                     for roundabout maneuvers that carry an exit number but no
-//                                     exit angle, prepend "(N) " to the HUD street name (truncated
-//                                     to the HUD field width); read by blmjciaapa (1.6 path)
-//                                     (default false)
+//   roundabout_guess_exit_icon = true|false (GAL 1.6; default false)
+//                                     estimate a glyph angle when the exit angle is absent
+//   roundabout_prepend_exit_number = true|false (GAL 1.6; default false)
+//                                     show the exit number before the street name
+//                                     when the exit angle is absent
 //   aa_audio_low_latency = true|false Android Auto low-latency audio: the AA audio-cutoff
 //                                     fix, all three edges of a prompt under one switch.
 //                                     Start/head — lower AA playback's ALSA start threshold
@@ -389,9 +383,9 @@ inline void log_effective(const char *prefix)
 {
     const Settings &s = settings();
     LOGD("config: %s touch=%s hud=%s hud_transport=%s force_street_name=%s "
-            "hud_fold_latin=%s hud_maneuver_max_distance_m=%u "
-            "use_protocol_v1_6=%s aa_audio_low_latency=%s "
+            "hud_fold_latin=%s use_protocol_v1_6=%s "
             "roundabout_guess_exit_icon=%s roundabout_prepend_exit_number=%s "
+            "aa_audio_low_latency=%s "
             "mute_pauses_phone=%s "
             "unmute_starts_playback=%s "
             "block_headunit_media_play=%s bt_pairing_bypass_all_devices=%s "

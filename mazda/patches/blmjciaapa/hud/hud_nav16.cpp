@@ -270,21 +270,7 @@ uint8_t roundabout_glyph(int32_t exit_angle, bool clockwise)
                                 : HUD_ROUNDABOUT_CCW_BASE) + idx);
 }
 
-// Circulation angle to assume when a roundabout step carries no exit angle,
-// keyed by roundabout_exit_number (index 0 = no usable number either).
-//
-// Exit N of an E-arm roundabout — arms evenly spaced, entry at 0 — sits at
-// 360*N/E. E is never on the wire, so the angle can only be estimated; these
-// are the values that minimise expected angular error over the plausible arm
-// counts, and the choice is unchanged whether 3-arm or 4-arm roundabouts
-// dominate. It is N*90 up to exit 3 and then rises more slowly, capped below
-// 360 (270, 300, 300 for N=4..6), because a 4th exit implies at least 5 arms.
-//
-// Accuracy: about one 30-degree glyph step on average. The worst cases are a
-// 3-arm roundabout taken at exit 2 (truly 240) and a 6-arm at exit 3 (truly
-// 180), where the estimate is 60-90 degrees out. That is the accepted cost of
-// having no arm count; it is bounded, unlike the alternative of treating an
-// absent angle as 0, which lands on the "back out the entry" glyph every time.
+// Approximate the circulation angle; the roundabout arm count is not provided.
 int32_t exit_number_angle(int32_t exit_number)
 {
     static const int16_t kAngle[] = { 180, 90, 180, 270, 270, 300, 300 };
@@ -293,12 +279,7 @@ int32_t exit_number_angle(int32_t exit_number)
     return kAngle[exit_number];
 }
 
-// The circulation angle to render for a roundabout: the sender's own angle when
-// it sent one, else (only if guessing is enabled) the exit-number estimate, else
-// 0 — which selects the index-0 roundabout glyph, the pre-estimate fallback.
-// (Angle 0 is the "back out the entry" glyph, NOT straight-through: straight
-// across is 180 -> index 6. See exit_number_angle for why 0 is a poor guess and
-// the estimate exists at all.)
+// Prefer the sender's angle; optionally estimate it from the exit number.
 //
 // Handedness is NOT decided here — it comes from the maneuver type (32/33 are
 // clockwise, 34/35 counterclockwise), so it is always what the sender stated and
@@ -312,15 +293,7 @@ int32_t roundabout_angle(const AaGuidance *g, bool guess_exit_icon)
     return exit_number_angle(g->have_exit_number ? g->roundabout_exit_number : 0);
 }
 
-// The roundabout maneuver family: plain enter/exit (30/31) and the enter+exit
-// combined types, both the plain (32/34) and WITH_ANGLE (33/35) variants. Only
-// these carry a meaningful roundabout_exit_number.
-//
-// This is deliberately wider than hud_nav16_glyph's angle switch (32..35): types
-// 30/31 get no directional roundabout glyph (they fall to HUD_STRAIGHT), so for
-// them the "(N)" street caption is the ONLY exit cue and is all the more worth
-// prepending. hud_nav16_road_with_exit is the sole caller.
-bool is_roundabout(uint32_t t) { return t >= 30 && t <= 35; }
+bool is_roundabout(uint32_t t) { return t >= 32 && t <= 35; }
 
 } // namespace
 
@@ -347,15 +320,20 @@ void hud_nav16_road_with_exit(const AaGuidance *g, bool prepend_exit_number,
 {
     if (!dst || cap == 0) return;
     if (!g) { dst[0] = '\0'; return; }
+
     if (prepend_exit_number && is_roundabout(g->maneuver_type)
-        && g->have_exit_number && !g->have_exit_angle
-        && g->roundabout_exit_number >= 1 && g->roundabout_exit_number <= 99) {
-        const int prefix_len = snprintf(dst, cap, "(%d) ", g->roundabout_exit_number);
-        if ((size_t)prefix_len >= cap) return;
-        libpatch::copy_utf8_truncated(dst + prefix_len, cap - prefix_len, g->road);
-        return;
+        && g->have_exit_number && !g->have_exit_angle && cap > 4
+        && g->roundabout_exit_number >= 1 && g->roundabout_exit_number <= 9) {
+
+        dst[0] = '(';
+        dst[1] = (char)('0' + g->roundabout_exit_number);
+        dst[2] = ')';
+        dst[3] = ' ';
+        dst[4] = '\0';
+        snprintf(dst + 4, cap - 4, "%s", g->road);
+    } else {
+        snprintf(dst, cap, "%s", g->road);
     }
-    libpatch::copy_utf8_truncated(dst, cap, g->road);
 }
 
 // AA NavigationDistance.DistanceUnits (0..7) -> Mazda HUD unit
@@ -461,12 +439,13 @@ bool hud_nav16_read_status(const uint8_t *raw, int size, int *status_out)
     return false;   // field 1 not present
 }
 
-int hud_nav16_format_guidance(const AaGuidance *g, char *buf, int cap)
+int hud_nav16_format_guidance(const AaGuidance *g, char *buf, int cap, bool guess_exit_icon)
 {
     if (!g || !buf || cap <= 0) return 0;
     int o = snprintf(buf, cap, "nav16 STATE: maneuver=%u(%s) glyph=%u road=\"%s\" steps=%d lanes=%d",
                           g->maneuver_type, hud_nav16_maneuver_name(g->maneuver_type),
-                          hud_nav16_glyph(g), g->road, g->n_steps, g->n_lanes);
+                          hud_nav16_glyph(g, guess_exit_icon),
+                          g->road, g->n_steps, g->n_lanes);
     for (int i = 0; i < g->n_lanes && o < cap; ++i)
         o += snprintf(buf + o, cap - o, " [L%d pres=0x%03x hi=0x%03x]",
                            i, g->lanes[i].present_mask, g->lanes[i].highlight_mask);

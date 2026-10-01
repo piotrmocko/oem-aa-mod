@@ -64,22 +64,10 @@ uint32_t hud_nav16_on_frame(const uint8_t *raw, int size, AaGuidance *g, AaPosit
 // The maneuver-glyph map: decoded guidance -> Mazda HUD glyph (MazdaIcon, and
 // 37..60 for roundabouts by exit angle). The single source of truth for the
 // AA -> HUD maneuver pairing.
-//
-// guess_exit_icon: when a roundabout step carries an exit number but no exit
-// angle, estimate the circulation angle from the exit number so a directional
-// glyph is chosen (see exit_number_angle). When false, an absent angle falls
-// back to the index-0 roundabout glyph (the "back out the entry" glyph, angle 0)
-// — the behaviour before that estimate existed. A real exit angle is always
-// honoured either way. The parameter defaults to true only as a convenience for
-// callers and the self-test; the shipped runtime default is false (config key
-// roundabout_guess_exit_icon), and production callers pass that value explicitly.
-uint8_t hud_nav16_glyph(const AaGuidance *g, bool guess_exit_icon = true);
+// guess_exit_icon optionally estimates the glyph angle when the sender omits it.
+uint8_t hud_nav16_glyph(const AaGuidance *g, bool guess_exit_icon);
 
-// Build the HUD street name for a step into dst[cap] (NUL-terminated, truncated
-// to fit — mirroring the HUD's own field limit). Normally just the road name;
-// when prepend_exit_number is set and the step is a roundabout that carries an
-// exit number but no exit angle, the name is "(N) <road>" so the driver still
-// sees which exit to take even without a per-exit glyph.
+// Format the road name, optionally prefixing an exit number (1..9).
 void hud_nav16_road_with_exit(const AaGuidance *g, bool prepend_exit_number,
                               char *dst, size_t cap);
 
@@ -93,7 +81,7 @@ uint8_t aa_to_mazda_unit(uint32_t units);
 int32_t parse_dist_x10(const char *s);
 
 // Pure formatters (snprintf into caller buffer; no I/O) for one-line logging.
-int hud_nav16_format_guidance(const AaGuidance *g, char *buf, int cap);
+int hud_nav16_format_guidance(const AaGuidance *g, char *buf, int cap, bool guess_exit_icon);
 int hud_nav16_format_position(const AaPosition *p, char *buf, int cap);
 
 // Read NavigationStatus (0x8003) field 1 (status enum varint) from a FULL frame
