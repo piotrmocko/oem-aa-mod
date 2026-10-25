@@ -188,6 +188,16 @@ void send_one(const NaviSnapshot &cur,
         return;
     }
 
+    // Force event_changed when maneuver changes, but distance and street doesn't
+    if (!event_changed && cur.dir_icon != 0 && cur.distance_dec == 0 &&
+        cur.dir_icon != prev.dir_icon) {
+        LOGD("hud_send: glyph=%u->%u with dist=0 — forcing SyncBit increment",
+             static_cast<unsigned>(prev.dir_icon),
+             static_cast<unsigned>(cur.dir_icon));
+        event_changed    = true;
+        distance_changed = true;
+    }
+
     // Plain-C OEM wire structs (no dbus-c++ marshalling types now).
     //   VbsNaviHudDisplay (uqyqyy): maneuver icon + distance block.
     //   VbsNaviHudMsg2    (sy):     street-name strip.
