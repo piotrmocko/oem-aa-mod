@@ -707,6 +707,7 @@ int32_t quantize_dist_x10(int32_t v, uint8_t mazda_unit)
 // not required — no manual padding, no size assert.
 struct AaNav16HudState {
     uint32_t glyph;                       // Mazda HUD maneuver glyph (MazdaIcon; 0=blank)
+    uint32_t maneuver_type;               // AA NavigationType (0..50)
     int32_t  dist_dec;                    // display distance * 10
     uint8_t  dist_unit;                   // Mazda HUD unit 0..5
     uint8_t  n_lanes;                     // 0..HUD_NAV16_MAX_LANES
@@ -796,12 +797,22 @@ static void nav16_on_guidance(const AaGuidance *g)
     // is the same not-yet-any-distance state every session starts in; the real
     // figure lands with the next 0x8007 (~1 s).
     if (glyph != acc.glyph || strcmp(road, acc.road) != 0) {
+        // TODO temporary logs
+        LOGD("nav: maneuver transition glyph %u->%u road \"%s\"->\"%s\" "
+             "maneuver_type=%u prev_maneuver=%u "
+             "dist_dec=%d step_meters=%d step_known=%d",
+             acc.glyph, glyph, acc.road, road,
+             g->have_maneuver ? g->maneuver_type : 0xFFFFFFFFu,
+             acc.maneuver_type,
+             acc.dist_dec, g_nav16_step_meters,
+             (int)g_nav16_step_distance_known);
         acc.dist_dec  = 0;
         acc.dist_unit = 0;
         g_nav16_step_distance_known = false;
         g_nav16_step_meters = 0;
     }
     acc.glyph = glyph;
+    acc.maneuver_type = g->have_maneuver ? g->maneuver_type : 0;
     strncpy(acc.road, road, sizeof(acc.road) - 1);
     acc.road[sizeof(acc.road) - 1] = '\0';
     int nl = g->n_lanes;
@@ -824,8 +835,21 @@ static void nav16_on_position(const AaPosition *p)
     if (!p->have_step) return;
     uint8_t unit = aa_to_mazda_unit(p->step_units);
     if (unit > 5) unit = 0;                             // clamp untrusted unit
+
+    int32_t dist_dec = quantize_dist_x10(parse_dist_x10(p->step_display), unit);
+
+    // TODO temporary logs
+    if (g_nav16_acc.maneuver_type == 44 || g_nav16_acc.maneuver_type == 46) {
+        LOGD("nav: RA_EXIT pos update maneuver=%u step_meters=%d "
+             "step_display=\"%s\" step_units=%u dist_dec=%d mazda_unit=%u "
+             "acc_glyph=%u acc_dist=%d",
+             g_nav16_acc.maneuver_type, p->step_meters,
+             p->step_display, p->step_units, dist_dec, (unsigned)unit,
+             g_nav16_acc.glyph, g_nav16_acc.dist_dec);
+    }
+
     g_nav16_acc.dist_unit = unit;
-    g_nav16_acc.dist_dec  = quantize_dist_x10(parse_dist_x10(p->step_display), unit);
+    g_nav16_acc.dist_dec  = dist_dec;
     g_nav16_step_meters = p->step_meters;
     g_nav16_step_distance_known = (p->step_meters >= 0);
     nav16_emit_if_changed();
