@@ -707,6 +707,7 @@ int32_t quantize_dist_x10(int32_t v, uint8_t mazda_unit)
 // not required — no manual padding, no size assert.
 struct AaNav16HudState {
     uint32_t glyph;                       // Mazda HUD maneuver glyph (MazdaIcon; 0=blank)
+    uint32_t maneuver_type;               // AA NavigationManeuver.NavigationType
     int32_t  dist_dec;                    // display distance * 10
     uint8_t  dist_unit;                   // Mazda HUD unit 0..5
     uint8_t  n_lanes;                     // 0..HUD_NAV16_MAX_LANES
@@ -753,6 +754,10 @@ static void nav16_emit_if_changed()
                            !hud_distance_within_limit(g_nav16_step_meters));
     if (filtered) memset(&display, 0, sizeof(display));
 
+    display.glyph = hud_nav16_roundabout_transition_glyph(
+        static_cast<uint8_t>(display.glyph), display.maneuver_type,
+        g_nav16_step_distance_known, g_nav16_step_meters);
+
     if (g_nav16_have_last && memcmp(&display, &g_nav16_last, sizeof(display)) == 0) return;
 
     uint8_t lane_codes[HUD_NAV16_MAX_LANES];
@@ -795,13 +800,16 @@ static void nav16_on_guidance(const AaGuidance *g)
     // never shown against the old step's ticking-down figure. 0 + unit 0 ("none")
     // is the same not-yet-any-distance state every session starts in; the real
     // figure lands with the next 0x8007 (~1 s).
-    if (glyph != acc.glyph || strcmp(road, acc.road) != 0) {
+    const uint32_t maneuver_type = g->have_maneuver ? g->maneuver_type : 0;
+    if (glyph != acc.glyph || maneuver_type != acc.maneuver_type ||
+        strcmp(road, acc.road) != 0) {
         acc.dist_dec  = 0;
         acc.dist_unit = 0;
         g_nav16_step_distance_known = false;
         g_nav16_step_meters = 0;
     }
     acc.glyph = glyph;
+    acc.maneuver_type = maneuver_type;
     strncpy(acc.road, road, sizeof(acc.road) - 1);
     acc.road[sizeof(acc.road) - 1] = '\0';
     int nl = g->n_lanes;

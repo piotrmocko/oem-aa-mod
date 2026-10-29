@@ -347,6 +347,22 @@ uint8_t hud_nav16_glyph(const AaGuidance *g)
     }
 }
 
+uint8_t hud_nav16_roundabout_transition_glyph(uint8_t glyph,
+                                             uint32_t maneuver_type,
+                                             bool distance_known,
+                                             int32_t distance_meters)
+{
+    if (!distance_known || distance_meters < 0 || distance_meters > 30) {
+        return glyph;
+    }
+
+    switch (maneuver_type) {
+    case 43: return kManeuverGlyph[44]; // RA_ENTER_CW -> RA_EXIT_CW
+    case 45: return kManeuverGlyph[46]; // RA_ENTER_CCW -> RA_EXIT_CCW
+    default: return glyph;
+    }
+}
+
 void hud_nav16_road_with_exit(const AaGuidance *g, bool prepend_exit_number,
                               char *dst, size_t cap)
 {

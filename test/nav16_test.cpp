@@ -428,9 +428,54 @@ int main()
         }
     }
 
+    // --- Shared GAL 1.6 roundabout transition (VBS and svcnavi) ---------------
+    {
+        printf("[15] roundabout enter -> exit at 30 m or less (GAL 1.6)\n");
+        CHECK_EQ_U(hud_nav16_roundabout_transition_glyph(
+                       HUD_STRAIGHT, 43, true, 31),
+                   HUD_STRAIGHT, "RA_ENTER_CW stays straight at 31 m");
+        CHECK_EQ_U(hud_nav16_roundabout_transition_glyph(
+                       HUD_STRAIGHT, 45, true, 31),
+                   HUD_STRAIGHT, "RA_ENTER_CCW stays straight at 31 m");
+        CHECK_EQ_U(hud_nav16_roundabout_transition_glyph(
+                       HUD_STRAIGHT, 43, true, 30),
+                   HUD_LEFT, "RA_ENTER_CW becomes RA_EXIT_CW at 30 m");
+        CHECK_EQ_U(hud_nav16_roundabout_transition_glyph(
+                       HUD_STRAIGHT, 45, true, 30),
+                   HUD_RIGHT, "RA_ENTER_CCW becomes RA_EXIT_CCW at 30 m");
+
+        static const int32_t kDecreasingDistances[] = {30, 20, 1, 0};
+        for (size_t i = 0;
+             i < sizeof(kDecreasingDistances) / sizeof(kDecreasingDistances[0]);
+             ++i) {
+            CHECK_EQ_U(hud_nav16_roundabout_transition_glyph(
+                           HUD_STRAIGHT, 43, true, kDecreasingDistances[i]),
+                       HUD_LEFT, "RA_EXIT_CW remains selected as distance decreases");
+            CHECK_EQ_U(hud_nav16_roundabout_transition_glyph(
+                           HUD_STRAIGHT, 45, true, kDecreasingDistances[i]),
+                       HUD_RIGHT, "RA_EXIT_CCW remains selected as distance decreases");
+        }
+
+        CHECK_EQ_U(hud_nav16_roundabout_transition_glyph(
+                       HUD_STRAIGHT, 43, false, 0),
+                   HUD_STRAIGHT, "unknown distance does not switch RA_ENTER_CW");
+        CHECK_EQ_U(hud_nav16_roundabout_transition_glyph(
+                       HUD_STRAIGHT, 45, true, -1),
+                   HUD_STRAIGHT, "negative distance does not switch RA_ENTER_CCW");
+        CHECK_EQ_U(hud_nav16_roundabout_transition_glyph(
+                       HUD_STRAIGHT, 36, true, 10),
+                   HUD_STRAIGHT, "different maneuver keeps its normal glyph");
+        CHECK_EQ_U(hud_nav16_roundabout_transition_glyph(
+                       HUD_FLAG, 1, true, 10),
+                   HUD_FLAG, "new DEPART maneuver is not replaced by roundabout exit");
+        CHECK_EQ_U(hud_nav16_roundabout_transition_glyph(
+                       HUD_RIGHT, 46, true, 10),
+                   HUD_RIGHT, "already-exit maneuver keeps its mapped glyph");
+    }
+
     // --- OEM codes: ferries ---------------------------------------------------
     {
-        printf("[15] ferries -> OEM ferry glyphs\n");
+        printf("[16] ferries -> OEM ferry glyphs\n");
         AaGuidance g;
         static const struct { const char *hex; unsigned exp; const char *msg; } kC[] = {
             {"80 06 0a 04 0a 02 08 25", 18u, "37 FERRY_BOAT        -> HUD_FERRY_BOAT"},

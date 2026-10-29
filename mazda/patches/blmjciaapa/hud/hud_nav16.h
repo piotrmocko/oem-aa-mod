@@ -66,6 +66,14 @@ uint32_t hud_nav16_on_frame(const uint8_t *raw, int size, AaGuidance *g, AaPosit
 // AA -> HUD maneuver pairing.
 uint8_t hud_nav16_glyph(const AaGuidance *g);
 
+// Convert a roundabout-enter glyph to its corresponding exit glyph once the
+// known distance is at most 30 m. Other maneuvers and unknown distances pass
+// through unchanged.
+uint8_t hud_nav16_roundabout_transition_glyph(uint8_t glyph,
+                                             uint32_t maneuver_type,
+                                             bool distance_known,
+                                             int32_t distance_meters);
+
 // Format the road name, optionally prefixing an exit number (1..9).
 void hud_nav16_road_with_exit(const AaGuidance *g, bool prepend_exit_number,
                               char *dst, size_t cap);
